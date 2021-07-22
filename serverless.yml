@@ -1,0 +1,230 @@
+service: parrot-api-test
+
+frameworkVersion: "2"
+
+#plugins:
+  #- serverless-dynamodb-local
+  #- serverless-offline
+
+#package:
+  #individually: true
+
+custom:
+  dynamodb:
+    stages:
+      - dev
+    start:
+      port: 8000
+      inMemory: true
+      migrate: true
+      
+provider:
+  name: aws
+  apiGateway:
+    apiKeys:
+      - APIKEY-PARROT-TEST
+  usagePlan:
+    quota:
+      limit: 86400000
+      period: DAY
+    throttle:
+      burstLimit: 1000
+      rateLimit: 1000
+  runtime: python3.8
+  region: us-west-2
+  lambdaHashingVersion: 20201221
+  environment:
+    DYNAMODB_TABLE_USERS: parrot-test-users
+    DYNAMODB_TABLE_ORDERS: parrot-test-orders
+    JWT_SECRET: JWT-SECRET-PARROT
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:DeleteItem
+          Resource: "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE_USERS}"
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource: "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE_ORDERS}"
+
+functions:   
+  createUser:
+    handler: users/create.create
+    events:
+      - http:
+          path: users
+          method: post
+          cors: true
+          private: true
+
+  getUsers:
+    handler: users/list.list
+    events:
+      - http:
+          path: users
+          method: get
+          cors: true
+          private: true
+          authorizer:
+            name: authorizer
+            resultTtlInSeconds: 0
+            identitySource: method.request.header.authorizationToken
+            type: token
+            
+  getUser:
+    handler: users/get.get
+    events:
+      - http:
+          path: users/{email}
+          method: get
+          cors: true
+          private: true
+          authorizer:
+            name: authorizer
+            resultTtlInSeconds: 0
+            identitySource: method.request.header.authorizationToken
+            type: token
+                
+  createOrder:
+    handler: orders/create.create
+    events:
+      - http:
+          path: orders
+          method: post
+          cors: true
+          private: true
+          authorizer:
+            name: authorizer
+            resultTtlInSeconds: 0
+            identitySource: method.request.header.authorizationToken
+            type: token
+
+  getOrders:
+    handler: orders/list.list
+    events:
+      - http:
+          path: orders
+          method: get
+          cors: true
+          private: true
+          authorizer:
+            name: authorizer
+            resultTtlInSeconds: 0
+            identitySource: method.request.header.authorizationToken
+            type: token
+
+  getOrder:
+    handler: orders/get.get
+    events:
+      - http:
+          path: orders/{id}
+          method: get
+          cors: true
+          private: true
+          authorizer:
+            name: authorizer
+            resultTtlInSeconds: 0
+            identitySource: method.request.header.authorizationToken
+            type: token
+
+  updateOrder:
+    handler: orders/update.update
+    events:
+      - http:
+          path: orders/{id}
+          method: put
+          cors: true
+          private: true
+          authorizer:
+            name: authorizer
+            resultTtlInSeconds: 0
+            identitySource: method.request.header.authorizationToken
+            type: token
+
+  deleteOrder:
+    handler: orders/delete.delete
+    events:
+      - http:
+          path: orders/{id}
+          method: delete
+          cors: true
+          private: true
+          authorizer:
+            name: authorizer
+            resultTtlInSeconds: 0
+            identitySource: method.request.header.authorizationToken
+            type: token
+
+  report:
+    handler: orders/report.report
+    events:
+      - http:
+          path: orders/report/{start_date}/{end_date}
+          method: get
+          cors: true
+          private: true
+          authorizer:
+            name: authorizer
+            resultTtlInSeconds: 0
+            identitySource: method.request.header.authorizationToken
+            type: token
+
+  login:
+    runtime: nodejs12.x
+    handler: authorizer/login.handler
+    events:
+      - http:
+          path: login
+          method: post
+          cors: true
+          private: true
+
+  authorizer:
+    runtime: nodejs12.x
+    handler: authorizer/authorizer.handler
+    
+resources:
+  Resources:
+    UsersDynamoDbTable:
+      Type: 'AWS::DynamoDB::Table'
+      DeletionPolicy: Retain
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: email
+            AttributeType: S
+        KeySchema:
+          - AttributeName: email
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.DYNAMODB_TABLE_USERS}
+    OrdersDynamoDbTable:
+      Type: 'AWS::DynamoDB::Table'
+      DeletionPolicy: Retain
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+          - AttributeName: createdAt
+            KeyType: RANGE
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:provider.environment.DYNAMODB_TABLE_ORDERS}
